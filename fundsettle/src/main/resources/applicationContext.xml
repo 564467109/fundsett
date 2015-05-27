@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:p="http://www.springframework.org/schema/p"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:mvc="http://www.springframework.org/schema/mvc" xmlns:jee="http://www.springframework.org/schema/jee"
+	xmlns:tx="http://www.springframework.org/schema/tx" xmlns:aop="http://www.springframework.org/schema/aop"
+	xsi:schemaLocation="
+            http://www.springframework.org/schema/beans 
+            http://www.springframework.org/schema/beans/spring-beans-4.0.xsd  
+            http://www.springframework.org/schema/context 
+            http://www.springframework.org/schema/context/spring-context-4.0.xsd
+            http://www.springframework.org/schema/mvc
+     		  http://www.springframework.org/schema/mvc/spring-mvc-4.0.xsd
+     		  http://www.springframework.org/schema/aop
+            http://www.springframework.org/schema/aop/spring-aop-4.0.xsd
+     		  http://www.springframework.org/schema/tx
+            http://www.springframework.org/schema/tx/spring-tx.xsd">
+
+	<context:annotation-config />
+
+	<context:component-scan base-package="com.uusoft.fund.flow.dp" />
+	<context:component-scan base-package="com.uusoft.fund.*">
+		<!-- <context:exclude-filter type="annotation"
+			expression="org.springframework.stereotype.Controller" /> -->
+	</context:component-scan>
+
+	<aop:aspectj-autoproxy proxy-target-class="true" />
+	<tx:annotation-driven transaction-manager="transactionManager" />
+
+	<bean id="propertyConfigurer"
+		class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+		<property name="ignoreUnresolvablePlaceholders" value="true" />
+		<property name="locations">
+			<list>
+				<value>classpath:jdbc.properties</value>
+			</list>
+		</property>
+		<property name="order" value="1" />
+	</bean>
+
+	<bean id="pumpEnvVar" class="com.uusoft.fund.flow.dp.PumpEnvVar">
+		<property name="basePath" value="${basePath}"></property>
+	</bean>
+	
+	<bean id="balPump" class="com.uusoft.fund.flow.dp.BalPump">
+	</bean>
+
+	<!-- 连接ttmoney数据库 -->
+	<bean id="dataSource" class="org.apache.commons.dbcp.BasicDataSource">
+		<property name="driverClassName" value="${jdbc.driver}" />
+		<property name="url" value="${jdbc.url}" />
+		<property name="username" value="${jdbc.user}" />
+
+		<!-- <property name="password" value="${jdbc.pwd}" /> -->
+		<property name="password">
+			<bean class="com.uusoft.commom.tools.secret.SecretDB">
+				<property name="password" value="${jdbc.pwd}"></property>
+			</bean>
+		</property>
+		<property name="defaultAutoCommit" value="false" />
+		<!-- 池启动时创建的连接数量 -->
+		<property name="initialSize" value="5" />
+		<!-- 同一时间可以从池分配的最多连接数量。设置为0时表示无限制。 -->
+		<property name="maxActive" value="${max_conn_count}" />
+		<!-- 池里不会被释放的最多空闲连接数量。设置为0时表示无限制。 -->
+		<property name="maxIdle" value="${min_conn_count}" />
+		<!-- 在不新建连接的条件下，池中保持空闲的最少连接数。 -->
+		<property name="minIdle" value="3" />
+		<!-- 设置自动回收超时连接 -->
+		<property name="removeAbandoned" value="true" />
+		<!-- 自动回收超时时间(以秒数为单位) -->
+		<property name="removeAbandonedTimeout" value="200" />
+		<!-- 设置在自动回收超时连接的时候打印连接的超时错误 -->
+		<property name="logAbandoned" value="true" />
+		<!-- 等待超时以毫秒为单位，在抛出异常之前，池等待连接被回收的最长时间（当没有可用连接时）。设置为-1表示无限等待。 -->
+		<property name="maxWait" value="100" />
+		<property name="testOnBorrow" value="true" />
+		<property name="testOnReturn" value="true" />
+		<property name="testWhileIdle" value="true" />
+	</bean>
+
+	<bean id="jdbcTemplate" class="org.springframework.jdbc.core.JdbcTemplate">
+		<property name="dataSource">
+			<ref bean="dataSource" />
+		</property>
+	</bean>
+
+	<bean id="transactionManager"
+		class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<!-- 声明式容器事务管理 ,transaction-manager指定事务管理器为transactionManager -->
+	<tx:advice id="txAdvice" transaction-manager="transactionManager">
+		<tx:attributes>
+			<tx:method name="*" propagation="REQUIRED" />
+			<!--<tx:method name="add*" propagation="REQUIRED"/> -->
+			<!--<tx:method name="save*" propagation="REQUIRED"/> -->
+			<!--<tx:method name="get*" propagation="REQUIRED"/> -->
+			<!--<tx:method name="*" read-only="true"/> -->
+		</tx:attributes>
+	</tx:advice>
+
+	<aop:config expose-proxy="true">
+		<!-- 只对业务逻辑层实施事务 -->
+		<aop:pointcut id="txPointcut"
+			expression="execution(* com.uusoft.fund.services.*.*(..))" />
+		<!-- Advisor定义，切入点和通知分别为txPointcut、txAdvice -->
+		<aop:advisor pointcut-ref="txPointcut" advice-ref="txAdvice" />
+	</aop:config>
+	
+	<bean id="paygate"
+		class="org.springframework.remoting.caucho.HessianProxyFactoryBean">
+		<property name="serviceUrl">
+			<value>http://192.168.2.12:18080/fundflow/ws/paygate</value>
+			<!-- <value>http://127.0.0.1:8080/fundflow/ws/paygate</value> -->
+		</property>
+		<property name="serviceInterface">
+			<value>com.uusoft.fund.flow.dp.IPayGateInfo</value>
+		</property>
+	</bean>
+	
+	<bean id="code"
+		class="org.springframework.remoting.caucho.HessianProxyFactoryBean">
+		<property name="serviceUrl">
+			<value>http://192.168.2.12:18080/fundflow/ws/code</value>
+			<!-- <value>http://127.0.0.1:8080/fundflow/ws/paygate</value> -->
+		</property>
+		<property name="serviceInterface">
+			<value>com.uusoft.fund.flow.dp.ICode</value>
+		</property>
+	</bean>
+	
+	
+	<bean id="kcdataSource" class="org.apache.commons.dbcp.BasicDataSource">
+		<property name="driverClassName" value="${kc.dirver}" />
+		<property name="url" value="${kc.url}" />
+		<property name="username" value="${kc.username}" />
+		<property name="password" value="${kc.password}" />
+		<!-- 池启动时创建的连接数量 -->
+		<property name="initialSize" value="5" />
+		<!-- 同一时间可以从池分配的最多连接数量。设置为0时表示无限制。 -->
+		<property name="maxActive" value="${max_conn_count}" />
+		<!-- 池里不会被释放的最多空闲连接数量。设置为0时表示无限制。 -->
+		<property name="maxIdle" value="${min_conn_count}" />
+		<!-- 在不新建连接的条件下，池中保持空闲的最少连接数。 -->
+		<property name="minIdle" value="3" />
+		<!-- 设置自动回收超时连接 -->
+		<property name="removeAbandoned" value="true" />
+		<!-- 自动回收超时时间(以秒数为单位) -->
+		<property name="removeAbandonedTimeout" value="200" />
+		<!-- 设置在自动回收超时连接的时候打印连接的超时错误 -->
+		<property name="logAbandoned" value="true" />
+		<!-- 等待超时以毫秒为单位，在抛出异常之前，池等待连接被回收的最长时间（当没有可用连接时）。设置为-1表示无限等待。 -->
+		<property name="maxWait" value="100" />
+		<property name="testOnBorrow" value="true" />
+		<property name="testOnReturn" value="true" />
+		<property name="testWhileIdle" value="true" />
+		<property name="validationQuery" value="select 1 from dual" />
+	</bean>
+
+	<bean id="kcJdbcTemplate" class="org.springframework.jdbc.core.JdbcTemplate">
+		<property name="dataSource">
+			<ref bean="kcdataSource" />
+		</property>
+	</bean>
+
+	<!-- <context:property-placeholder location="classpath:redis.properties" 
+		/> <bean id="jedis" class="redis.clients.jedis.Jedis"> <constructor-arg index="0" 
+		type="java.lang.String" value="${redis.host}"/> <constructor-arg index="1" 
+		type="int" value="${redis.port}"/> </bean> -->
+
+	<!-- Redis 缓存部分配置 -->
+	<!-- <bean id="poolConfig" class="redis.clients.jedis.JedisPoolConfig"> 
+		<property name="maxIdle" value="${redis.maxIdle}" /> <property name="maxActive" 
+		value="${redis.maxActive}" /> <property name="maxWait" value="${redis.maxWait}" 
+		/> <property name="testOnBorrow" value="${redis.testOnBorrow}" /> </bean> 
+		<bean id="connectionFactory" class="org.springframework.data.redis.connection.jedis.JedisConnectionFactory" 
+		p:host-name="${redis.host}" p:port="${redis.port}" p:password="${redis.pass}" 
+		p:pool-config-ref="poolConfig" /> <bean id="redisTemplate" class="org.springframework.data.redis.core.RedisTemplate"> 
+		<property name="connectionFactory" ref="connectionFactory" /> <property name="keySerializer"> 
+		<bean class="org.springframework.data.redis.serializer.StringRedisSerializer" 
+		/> </property> <property name="hashKeySerializer"> <bean class="org.springframework.data.redis.serializer.StringRedisSerializer" 
+		/> </property> <property name="valueSerializer"> <bean class="org.springframework.data.redis.serializer.StringRedisSerializer" 
+		/> </property> <property name="hashValueSerializer"> <bean class="org.springframework.data.redis.serializer.StringRedisSerializer" 
+		/> </property> <property name="defaultSerializer"> <bean class="org.springframework.data.redis.serializer.StringRedisSerializer" 
+		/> </property> </bean> <bean id="messListPacker" class="com.uusoft.cache.redix.MessListPacker"> 
+		<constructor-arg ref="redisTemplate"></constructor-arg> </bean> -->
+</beans>
